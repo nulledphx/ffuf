@@ -103,7 +103,7 @@ func (s *Stdoutput) Banner() {
 		// or non-terminal stderr gets raw ANSI escape bytes in the banner.
 		version = strings.ReplaceAll(version, "<3", fmt.Sprintf("%s<3%s", ANSI_RED, ANSI_CLEAR))
 	}
-	fmt.Fprintf(os.Stderr, "%s\n       %s\n%s\n\n", BANNER_HEADER, version, BANNER_SEP)
+	fmt.Fprintf(os.Stderr, "%s\n       %s [custom build]\n%s\n\n", BANNER_HEADER, version, BANNER_SEP)
 	printOption([]byte("Method"), []byte(s.config.Method))
 	printOption([]byte("URL"), []byte(s.config.Url))
 
@@ -257,13 +257,23 @@ func (s *Stdoutput) Progress(status ffuf.Progress) {
 		reqRate = 0
 	}
 
+	etaStr := "--:--:--"
+	remaining := status.ReqTotal - status.ReqCount
+	if reqRate > 0 && remaining > 0 {
+		etaSecs := remaining / int(reqRate)
+		etaHours := etaSecs / 3600
+		etaMins := (etaSecs % 3600) / 60
+		etaSecs = etaSecs % 60
+		etaStr = fmt.Sprintf("%d:%02d:%02d", etaHours, etaMins, etaSecs)
+	}
+
 	hours := dur / time.Hour
 	dur -= hours * time.Hour
 	mins := dur / time.Minute
 	dur -= mins * time.Minute
 	secs := dur / time.Second
 
-	fmt.Fprintf(os.Stderr, "%s:: Progress: [%d/%d] :: Job [%d/%d] :: %d req/sec :: Duration: [%d:%02d:%02d] :: Errors: %d ::", s.stderrClear(), status.ReqCount, status.ReqTotal, status.QueuePos, status.QueueTotal, reqRate, hours, mins, secs, status.ErrorCount)
+	fmt.Fprintf(os.Stderr, "%s:: Progress: [%d/%d] :: Job [%d/%d] :: %d req/sec (ETA: %s) :: Duration: [%d:%02d:%02d] :: Errors: %d ::", s.stderrClear(), status.ReqCount, status.ReqTotal, status.QueuePos, status.QueueTotal, reqRate, etaStr, hours, mins, secs, status.ErrorCount)
 }
 
 func (s *Stdoutput) Info(infostring string) {

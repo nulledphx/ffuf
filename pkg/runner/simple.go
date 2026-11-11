@@ -30,6 +30,7 @@ import (
 
 // Download results < 5MB
 const MAX_DOWNLOAD_SIZE = 5242880
+const DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 type SimpleRunner struct {
 	config *ffuf.Config
@@ -204,7 +205,7 @@ func (r *SimpleRunner) Execute(req *ffuf.Request) (resp ffuf.Response, err error
 
 	// set default User-Agent header if not present
 	if _, ok := req.Headers["User-Agent"]; !ok {
-		req.Headers["User-Agent"] = fmt.Sprintf("%s v%s", "Fuzz Faster U Fool", ffuf.Version())
+		req.Headers["User-Agent"] = DefaultUserAgent
 	}
 
 	// Handle Go http.Request special cases
@@ -441,7 +442,7 @@ func (r *SimpleRunner) parsePreflightRequest(filename string, vars map[string]st
 		httpreq.Host = host
 	}
 	if _, ok := headers["User-Agent"]; !ok {
-		headers["User-Agent"] = fmt.Sprintf("%s v%s", "Fuzz Faster U Fool", ffuf.Version())
+		headers["User-Agent"] = DefaultUserAgent
 	}
 	for k, v := range headers {
 		httpreq.Header.Set(k, v)
@@ -693,7 +694,7 @@ func (r *SimpleRunner) Dump(req *ffuf.Request) ([]byte, error) {
 
 	// set default User-Agent header if not present
 	if _, ok := req.Headers["User-Agent"]; !ok {
-		req.Headers["User-Agent"] = fmt.Sprintf("%s v%s", "Fuzz Faster U Fool", ffuf.Version())
+		req.Headers["User-Agent"] = DefaultUserAgent
 	}
 
 	// Handle Go http.Request special cases

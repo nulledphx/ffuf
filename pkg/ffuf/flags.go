@@ -58,10 +58,17 @@ func (m *multiStringValue) Set(v string) error {
 }
 
 // wordlistValue appends, comma-splitting a single occurrence (e.g. -w a.txt,b.txt).
-type wordlistValue struct{ p *[]string }
+type wordlistValue struct {
+	p   *[]string
+	set bool
+}
 
 func (w *wordlistValue) String() string { return "" }
 func (w *wordlistValue) Set(v string) error {
+	if !w.set {
+		*w.p = []string{}
+		w.set = true
+	}
 	if parts := strings.Split(v, ","); len(parts) > 1 {
 		*w.p = append(*w.p, parts...)
 	} else {
@@ -299,7 +306,7 @@ func bindField(fs *flag.FlagSet, name, usage, kind string, ptr interface{}) {
 		case "multistring":
 			fs.Var(&multiStringValue{p}, name, usage)
 		case "wordlist":
-			fs.Var(&wordlistValue{p}, name, usage)
+			fs.Var(&wordlistValue{p: p}, name, usage)
 		case "csvreplace":
 			fs.Var(&csvReplaceValue{p: p}, name, usage)
 		default:

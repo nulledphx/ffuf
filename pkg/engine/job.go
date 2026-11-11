@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -55,6 +57,8 @@ type Job struct {
 	calibMutex      sync.Mutex   // serializes autocalibration
 	pauseStateMutex sync.Mutex   // makes the pause-flag flip and the pauseMutex Lock/Unlock one atomic step
 	pauseMutex      sync.RWMutex // pause gate: workers RLock as a speed bump, Pause takes the write Lock
+	backoffMutex    sync.Mutex
+	lastBackoff     time.Time
 }
 
 type QueueJob struct {
@@ -319,6 +323,52 @@ func (j *Job) pauseCheckpoint() {
 	j.pauseMutex.RUnlock()
 }
 
+func (j *Job) handleRateLimitBackoff(resp ffuf.Response) {
+	if resp.StatusCode != 429 && resp.StatusCode != 503 {
+		return
+	}
+	is429 := resp.StatusCode == 429
+	retryAfterVal := ""
+	for k, v := range resp.Headers {
+		if strings.EqualFold(k, "Retry-After") && len(v) > 0 {
+			retryAfterVal = v[0]
+			break
+		}
+	}
+	if !is429 && retryAfterVal == "" {
+		return
+	}
+
+	j.backoffMutex.Lock()
+	defer j.backoffMutex.Unlock()
+
+	if time.Since(j.lastBackoff) < 5*time.Second {
+		return
+	}
+
+	backoffSecs := 5
+	if retryAfterVal != "" {
+		if s, err := strconv.Atoi(strings.TrimSpace(retryAfterVal)); err == nil && s > 0 {
+			backoffSecs = s
+			if backoffSecs > 60 {
+				backoffSecs = 60
+			}
+		}
+	}
+
+	j.Output.Warning(fmt.Sprintf("Status %d received, pausing for %ds", resp.StatusCode, backoffSecs))
+	j.Pause()
+	j.lastBackoff = time.Now().Add(time.Duration(backoffSecs) * time.Second)
+
+	go func(waitSecs int) {
+		select {
+		case <-j.Config.Context.Done():
+		case <-time.After(time.Duration(waitSecs) * time.Second):
+		}
+		j.Resume()
+	}(backoffSecs)
+}
+
 func (j *Job) startExecution(ctx jobContext) {
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -535,6 +585,9 @@ func (j *Job) runTask(ctx jobContext, input map[string][]byte, position int, ret
 		if resp.StatusCode == 429 {
 			j.inc429()
 		}
+	}
+	if resp.StatusCode == 429 || resp.StatusCode == 503 {
+		j.handleRateLimitBackoff(resp)
 	}
 	j.pauseCheckpoint()
 

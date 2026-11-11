@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ffuf/ffuf/v2/pkg/assembly"
@@ -74,7 +75,61 @@ func main() {
 	}
 
 	if opts.General.ShowVersion {
-		fmt.Printf("ffuf version: %s\n", ffuf.Version())
+		fmt.Printf("ffuf version: %s (custom build)\n", ffuf.Version())
+		os.Exit(0)
+	}
+
+	if opts.General.SaveDefaults {
+		targetFile := ffuf.GetDefaultConfigFile()
+		currentConf, _ := ffuf.ReadConfig(targetFile)
+		if currentConf == nil {
+			currentConf = ffuf.NewConfigOptions()
+		}
+
+		savedItems := []string{}
+		flag.Visit(func(f *flag.Flag) {
+			switch f.Name {
+			case "w":
+				currentConf.Input.Wordlists = opts.Input.Wordlists
+				savedItems = append(savedItems, fmt.Sprintf("wordlist: %s", strings.Join(opts.Input.Wordlists, ", ")))
+			case "t":
+				currentConf.General.Threads = opts.General.Threads
+				savedItems = append(savedItems, fmt.Sprintf("threads: %d", opts.General.Threads))
+			case "u":
+				currentConf.HTTP.URL = opts.HTTP.URL
+				savedItems = append(savedItems, fmt.Sprintf("url: %s", opts.HTTP.URL))
+			case "timeout":
+				currentConf.HTTP.Timeout = opts.HTTP.Timeout
+				savedItems = append(savedItems, fmt.Sprintf("timeout: %d", opts.HTTP.Timeout))
+			case "p":
+				currentConf.General.Delay = opts.General.Delay
+				savedItems = append(savedItems, fmt.Sprintf("delay: %s", opts.General.Delay))
+			case "rate":
+				currentConf.General.Rate = opts.General.Rate
+				savedItems = append(savedItems, fmt.Sprintf("rate: %d", opts.General.Rate))
+			}
+		})
+
+		if len(savedItems) == 0 {
+			if len(opts.Input.Wordlists) > 0 {
+				currentConf.Input.Wordlists = opts.Input.Wordlists
+				savedItems = append(savedItems, fmt.Sprintf("wordlist: %s", strings.Join(opts.Input.Wordlists, ", ")))
+			}
+			if opts.General.Threads > 0 {
+				currentConf.General.Threads = opts.General.Threads
+				savedItems = append(savedItems, fmt.Sprintf("threads: %d", opts.General.Threads))
+			}
+		}
+
+		if err := ffuf.WriteConfig(targetFile, currentConf); err != nil {
+			fmt.Fprintf(os.Stderr, "[ERR] Could not save configuration to %s: %s\n", targetFile, err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("[+] Successfully saved defaults to %s:\n", targetFile)
+		for _, item := range savedItems {
+			fmt.Printf("    • %s\n", item)
+		}
 		os.Exit(0)
 	}
 	if len(opts.Output.DebugLog) != 0 {

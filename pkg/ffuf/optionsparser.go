@@ -80,6 +80,7 @@ type GeneralOptions struct {
 	ScraperFile               string   `json:"scraperfile" ffuf:"scraperfile" section:"general" usage:"Custom scraper file path"`
 	Scrapers                  string   `json:"scrapers" ffuf:"scrapers" section:"general" usage:"Active scraper groups"`
 	Searchhash                string   `json:"-" ffuf:"search" section:"general" usage:"Search for a FFUFHASH payload from ffuf history"`
+	SaveDefaults              bool     `toml:"-" json:"-" ffuf:"save-defaults" alias:"save" section:"general" usage:"Save provided options to default config file and exit"`
 	ShowVersion               bool     `toml:"-" json:"-" ffuf:"V" section:"general" usage:"Show version information."`
 	StopOn403                 bool     `json:"stop_on_403" ffuf:"sf" section:"general" usage:"Stop when > 95% of responses return 403 Forbidden"`
 	StopOnAll                 bool     `json:"stop_on_all" ffuf:"sa" section:"general" usage:"Stop on all error cases. Implies -sf and -se."`
@@ -408,6 +409,24 @@ func ConfigFromOptions(parseOpts *ConfigOptions, ctx context.Context, cancel con
 	//Prepare URL
 	if parseOpts.HTTP.URL != "" {
 		conf.Url = parseOpts.HTTP.URL
+		if conf.InputMode != "sniper" && !strings.Contains(conf.Url, "FUZZ") {
+			hasKeyword := false
+			for _, wlStr := range parseOpts.Input.Wordlists {
+				parts := strings.SplitN(wlStr, ":", 2)
+				if len(parts) == 2 && parts[1] != "" && strings.Contains(conf.Url, parts[1]) {
+					hasKeyword = true
+					break
+				}
+			}
+			if !hasKeyword && !strings.Contains(conf.Url, "§") {
+				if strings.HasSuffix(conf.Url, "/") {
+					conf.Url += "FUZZ"
+				} else {
+					conf.Url += "/FUZZ"
+				}
+				parseOpts.HTTP.URL = conf.Url
+			}
+		}
 	}
 
 	// Prepare SNI
@@ -887,15 +906,34 @@ func ReadConfig(configFile string) (*ConfigOptions, error) {
 	return conf, err
 }
 
-func ReadDefaultConfig() (*ConfigOptions, error) {
-	// Try to create configuration directory, ignore the potential error
+func GetDefaultConfigFile() string {
 	_ = CheckOrCreateConfigDir()
 	conffile := filepath.Join(CONFIGDIR, "ffufrc")
 	if !FileExists(conffile) {
 		userhome, err := os.UserHomeDir()
 		if err == nil {
-			conffile = filepath.Join(userhome, ".ffufrc")
+			homeConf := filepath.Join(userhome, ".ffufrc")
+			if FileExists(homeConf) {
+				return homeConf
+			}
 		}
 	}
+	return conffile
+}
+
+func WriteConfig(configFile string, conf *ConfigOptions) error {
+	data, err := toml.Marshal(conf)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(configFile)
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		return err
+	}
+	return os.WriteFile(configFile, data, 0644)
+}
+
+func ReadDefaultConfig() (*ConfigOptions, error) {
+	conffile := GetDefaultConfigFile()
 	return ReadConfig(conffile)
 }
